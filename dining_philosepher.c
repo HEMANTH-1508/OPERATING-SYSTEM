@@ -1,112 +1,53 @@
 #include <stdio.h>
-#include <stdlib.h>
 #include <pthread.h>
+#include <semaphore.h>
 #include <unistd.h>
 
 #define NUM_PHILOSOPHERS 5
 
-// Define states for philosophers
-#define THINKING 0
-#define HUNGRY 1
-#define EATING 2
+sem_t room; 
+sem_t chopstick[NUM_PHILOSOPHERS];
 
-// Mutex to control access to shared resources
-pthread_mutex_t mutex;
-pthread_cond_t condition[NUM_PHILOSOPHERS];
+void *philosopher(void *); 
+void eat(int); 
 
-// Array to store the states of each philosopher
-int state[NUM_PHILOSOPHERS];
+int main() { 
+    pthread_t tid[NUM_PHILOSOPHERS]; 
+    int philosophers[NUM_PHILOSOPHERS] = {0, 1, 2, 3, 4}; // IDs for philosophers
 
-// Function prototypes
-void *philosopher(void *arg);
-void grab_forks(int philosopher_number);
-void put_forks(int philosopher_number);
-void test(int philosopher_number);
+    sem_init(&room, 0, 4); // There are 4 seats available in the dining room
 
-int main() 
-{
-    pthread_t philosophers[NUM_PHILOSOPHERS];
-    int i;
+    for (int i = 0; i < NUM_PHILOSOPHERS; i++) 
+        sem_init(&chopstick[i], 0, 1); // Initialize each chopstick
 
-    // Initialize mutex and conditions
-    pthread_mutex_init(&mutex, NULL);
-    for (i = 0; i < NUM_PHILOSOPHERS; i++) 
-    {
-        pthread_cond_init(&condition[i], NULL);
-    }
+    for (int i = 0; i < NUM_PHILOSOPHERS; i++) 
+        pthread_create(&tid[i], NULL, philosopher, (void *)&philosophers[i]); // Create philosopher threads
 
-    // Create philosopher threads
-    for (i = 0; i < NUM_PHILOSOPHERS; i++) 
-    {
-        int *philosopher_number = (int *)malloc(sizeof(int));
-        *philosopher_number = i;
-        pthread_create(&philosophers[i], NULL, philosopher, philosopher_number);
-    }
+    for (int i = 0; i < NUM_PHILOSOPHERS; i++) 
+        pthread_join(tid[i], NULL); // Wait for all philosopher threads to finish
 
-    // Join philosopher threads
-    for (i = 0; i < NUM_PHILOSOPHERS; i++) 
-    {
-        pthread_join(philosophers[i], NULL);
-    }
+    return 0; 
+} 
 
-    // Destroy mutex and conditions
-    pthread_mutex_destroy(&mutex);
-    for (i = 0; i < NUM_PHILOSOPHERS; i++) 
-    {
-        pthread_cond_destroy(&condition[i]);
-    }
-
-    return 0;
-}
-
-void *philosopher(void *arg) 
-{
-    int philosopher_number = *((int *)arg);
-    free(arg);
+void *philosopher(void *num) { 
+    int phil = *(int *)num; 
 
     while (1) {
-        printf("Philosopher %d is thinking.\n", philosopher_number);
+        sem_wait(&room); // Try to enter the dining room
+        printf("\nPhilosopher %d has entered the dining room", phil);
 
-        grab_forks(philosopher_number);
+        sem_wait(&chopstick[phil]); // Pick up left chopstick
+        sem_wait(&chopstick[(phil + 1) % NUM_PHILOSOPHERS]); // Pick up right chopstick
 
-        printf("Philosopher %d is eating.\n", philosopher_number);
+        eat(phil); // Philosopher is eating
 
-        sleep(2); // Simulate eating time
-
-        put_forks(philosopher_number);
+        sem_post(&chopstick[(phil + 1) % NUM_PHILOSOPHERS]); // Release right chopstick
+        sem_post(&chopstick[phil]); // Release left chopstick
+        sem_post(&room); // Leave the dining room
     }
+} 
 
-    pthread_exit(NULL);
-}
-
-void grab_forks(int philosopher_number) 
-{
-    pthread_mutex_lock(&mutex);
-    state[philosopher_number] = HUNGRY;
-    test(philosopher_number);
-    while (state[philosopher_number] != EATING) {
-        pthread_cond_wait(&condition[philosopher_number], &mutex);
-    }
-    pthread_mutex_unlock(&mutex);
-}
-
-void put_forks(int philosopher_number) 
-{
-    pthread_mutex_lock(&mutex);
-    state[philosopher_number] = THINKING;
-    printf("Philosopher %d has finished eating.\n", philosopher_number);
-    test((philosopher_number + 4) % NUM_PHILOSOPHERS);
-    test((philosopher_number + 1) % NUM_PHILOSOPHERS);
-    pthread_mutex_unlock(&mutex);
-}
-
-void test(int philosopher_number) 
-{
-    if (state[philosopher_number] == HUNGRY &&
-        state[(philosopher_number + 4) % NUM_PHILOSOPHERS] != EATING &&
-        state[(philosopher_number + 1) % NUM_PHILOSOPHERS] != EATING) 
-    {
-        state[philosopher_number] = EATING;
-        pthread_cond_signal(&condition[philosopher_number]);
-    }
+void eat(int phil) { 
+    printf("\nPhilosopher %d is eating", phil); 
+    sleep(2); // Simulate eating time
 }
